@@ -1,5 +1,3 @@
-import os
-os.environ["CURL_CA_BUNDLE"] = ""  # Disables SSL verification for requests/urllib3 in python
 import streamlit as st
 import os
 from google import genai
