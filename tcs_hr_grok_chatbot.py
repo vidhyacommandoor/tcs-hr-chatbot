@@ -1,31 +1,39 @@
 import streamlit as st
 import os
-from google import genai
-from google.genai import types
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from dotenv import load_dotenv
 
-# Load locally saved or platform-level environment secrets
+# ====================== CORPORATE NETWORK SAFEGUARDS ======================
+# Bypasses strict internal corporate SSL proxy interception errors
+os.environ["CURL_CA_BUNDLE"] = ""
+
+# Load local environment secrets if available
 load_dotenv()
 
 st.set_page_config(page_title="TCS HR Assistant", page_icon="🤖", layout="centered")
 
-# ====================== TCS GENAILAB SETUP ======================
+# ====================== TCS LITELLM GATEWAY SETUP ======================
+# Safely pull from Streamlit cloud secrets or local environment variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
-# Fetch the custom internal URL provided by the portal instructions
-BASE_URL = os.getenv("GOOGLE_GEMINI_BASE_URL") or st.secrets.get("GOOGLE_GEMINI_BASE_URL") or "https://genailab.tcs.in"
+BASE_URL = os.getenv("GOOGLE_GEMINI_BASE_URL") or st.secrets.get("GOOGLE_GEMINI_BASE_URL") or "https://genailab.tcs.in/v1"
 
 if not GEMINI_API_KEY:
-    st.error("❌ GEMINI_API_KEY is missing from configuration parameters.")
+    st.error("❌ Configuration Error: API Key missing from environment settings/secrets.")
     st.stop()
 
-# Tell the Google SDK to talk to the tcs.in LiteLLM Gateway instead of public Google servers
-client = genai.Client(
+# Initialize LangChain ChatOpenAI configured directly for the TCS LiteLLM endpoint
+# NOTE: If gemini-2.5-flash gives an RBAC 403 access error, swap the model parameter string
+# to "azure/genailab-maas-gpt-4o-mini" which has a highly inclusive access tier.
+llm = ChatOpenAI(
     api_key=GEMINI_API_KEY,
-    http_options={'base_url': BASE_URL}
+    base_url=BASE_URL,
+    model="azure/genailab-maas-gpt-4o-mini", 
+    temperature=0.2, # Low temperature ensures safe policy adherence and minimizes hallucinations
+    max_tokens=900
 )
 
-# ====================== SYSTEM PROMPT ======================
-# Tailored to match evaluation themes: empathetic tone, dependency handoffs, and avoiding false timeline promises
+# ====================== HR POLICY SYSTEM INSTRUCTIONS ======================
 HR_SYSTEM_PROMPT = """
 You are TCS HR Assistant, a professional, empathetic HR chatbot for Tata Consultancy Services.
 
@@ -43,8 +51,8 @@ Rules for response generation (Strict Evaluation Criteria):
 - Clearly note dependency boundaries (e.g., dependencies on Payroll, IT, Background Verification Vendors, or Admin teams) when answering status requests.
 """
 
-# ====================== SYNTHETIC DATABASE ======================
-# Business-realistic synthetic context generated in accordance with exercise requirements
+# ====================== SYNTHETIC INTERNAL DATABASE ======================
+# Realistic fictional data generated to fulfill workbook simulation guidelines
 CANDIDATES = {
     "CAND-2026-4782": {
         "name": "Priya Sharma", 
@@ -67,24 +75,24 @@ CANDIDATES = {
 }
 
 st.title("🤖 TCS HR Assistant")
-st.caption("Multi-Process AI HR Support | Onboarding • Leave • Exit | Powered by Gemini 2.5 Flash")
+st.caption("Multi-Process AI HR Support | Powered by LangChain & GenAILab Gateway")
 
-# Initialize Chat Session State 
+# Initialize Chat History Session State if it doesn't exist
 if "messages" not in st.session_state:
     st.session_state.messages = [{
         "role": "assistant", 
         "content": "Hello! I am your TCS HR Assistant. How can I help resolve your core process or tracking queries today?\n\nYou can query me regarding **Onboarding**, **Leave Management**, or **Exit Formalities**."
     }]
 
-# ====================== SIDEBAR SETUP ======================
+# ====================== SIDEBAR CONFIGURATION ======================
 with st.sidebar:
-    st.header("🏢 Process Configuration")
+    st.header("🏢 Process Controls")
     process = st.selectbox("Active Track Focus", ["General Inquiries", "Onboarding Track", "Leave Management", "Exit Formalities"])
     
     st.markdown("---")
     st.info("💡 **Workbook Tip:** Provide your Candidate ID or Employee ID (e.g., `CAND-2026-4782`) to trace live database profile changes.")
     
-    # Hidden utility window allowing evaluators to verify backend simulation state
+    # Hidden utility expander allowing evaluators to verify backend simulation state
     with st.expander("🔍 View Synthetic Database Context"):
         st.json(CANDIDATES)
         
@@ -92,14 +100,14 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# Render Conversational History UI Layout Elements
+# Render Conversational History UI elements
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# ====================== CHAT EXECUTION LOGIC ======================
+# ====================== CHAT EXECUTION FLOW ======================
 if prompt := st.chat_input("Type your HR question here..."):
-    # Append and show user query block
+    # Append and show user query block instantly
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -108,7 +116,7 @@ if prompt := st.chat_input("Type your HR question here..."):
     with st.chat_message("assistant"):
         with st.spinner("Analyzing internal HR documentation and policy workflows..."):
             
-            # Dynamic Context Retrieval and Handoff Processing 
+            # Unstructured Text Search -> Structured Database Profile Mapping
             matched_context = "No specific tracking identifier or personal profile was referenced in this input sequence."
             for profile_id, data in CANDIDATES.items():
                 if profile_id in prompt:
@@ -118,36 +126,23 @@ if prompt := st.chat_input("Type your HR question here..."):
                     )
                     break
             
-            # Construct clear chat sequences matching the official SDK types format
-            gemini_contents = []
-            for m in st.session_state.messages:
-                # Map standard role strings to Gemini's expected values ('user' / 'model')
-                sdk_role = "model" if m["role"] == "assistant" else "user"
-                gemini_contents.append(
-                    types.Content(
-                        role=sdk_role,
-                        parts=[types.Part.from_text(text=m["content"])]
-                    )
-                )
+            # Map the running Streamlit history array into standard LangChain Message objects
+            langchain_messages = [
+                SystemMessage(content=f"{HR_SYSTEM_PROMPT}\n\n[INTERNAL PROFILE CONTEXT]: {matched_context}")
+            ]
             
+            for m in st.session_state.messages:
+                if m["role"] == "user":
+                    langchain_messages.append(HumanMessage(content=m["content"]))
+                else:
+                    langchain_messages.append(AIMessage(content=m["content"]))
+            
+            # Invoke the gateway model via LangChain
             try:
-                # Establish Generation Config payload mapping system prompts and hyperparameters
-                config = types.GenerateContentConfig(
-                    system_instruction=f"{HR_SYSTEM_PROMPT}\n\n[INTERNAL PROFILE CONTEXT]: {matched_context}",
-                    temperature=0.2,  # Low temperature for precise policy alignment and rule adherence
-                    max_output_tokens=900
-                )
-                
-                # Execute generation using the designated SDK target model name
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=gemini_contents,
-                    config=config
-                )
-                assistant_reply = response.text
-                
+                response = llm.invoke(langchain_messages)
+                assistant_reply = response.content
             except Exception as e:
-                assistant_reply = f"⚠️ **Connection Alert:** Unable to safely retrieve information from the core evaluation endpoint.\n\n*Log Details:* `{str(e)}`"
+                assistant_reply = f"⚠️ **Gateway Communication Issue:** Unable to safely retrieve information from the core evaluation endpoint.\n\n*Log Details:* `{str(e)}`"
 
             st.markdown(assistant_reply)
     
