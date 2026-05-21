@@ -28,7 +28,7 @@ if not GEMINI_API_KEY:
 llm = ChatOpenAI(
     api_key=GEMINI_API_KEY,
     base_url=BASE_URL,
-    model="azure/genailab-maas-gpt-4o-mini", 
+    model="azure/genailab-maas-gpt-5-mini", 
     temperature=0.2, # Low temperature ensures safe policy adherence and minimizes hallucinations
     max_tokens=900
 )
