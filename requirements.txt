@@ -1,6 +1,5 @@
 streamlit
 openai
-google-genai
 python-dotenv
 langchain-openai==0.3.35
 httpx
