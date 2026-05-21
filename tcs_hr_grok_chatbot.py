@@ -1,3 +1,5 @@
+import os
+os.environ["CURL_CA_BUNDLE"] = ""  # Disables SSL verification for requests/urllib3 in python
 import streamlit as st
 import os
 from google import genai
@@ -9,15 +11,20 @@ load_dotenv()
 
 st.set_page_config(page_title="TCS HR Assistant", page_icon="🤖", layout="centered")
 
-# ====================== GEMINI SETUP ======================
+# ====================== TCS GENAILAB SETUP ======================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+# Fetch the custom internal URL provided by the portal instructions
+BASE_URL = os.getenv("GOOGLE_GEMINI_BASE_URL") or st.secrets.get("GOOGLE_GEMINI_BASE_URL") or "https://genailab.tcs.in"
 
 if not GEMINI_API_KEY:
-    st.error("⚠️ GEMINI_API_KEY is missing. Please add it to your .env file or Streamlit Secrets configuration.")
+    st.error("❌ GEMINI_API_KEY is missing from configuration parameters.")
     st.stop()
 
-# Initialize the current Google GenAI client object
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Tell the Google SDK to talk to the tcs.in LiteLLM Gateway instead of public Google servers
+client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options={'base_url': BASE_URL}
+)
 
 # ====================== SYSTEM PROMPT ======================
 # Tailored to match evaluation themes: empathetic tone, dependency handoffs, and avoiding false timeline promises
